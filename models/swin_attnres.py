@@ -1,14 +1,11 @@
 """
 Swin Transformer + Intra-Stage Block AttnRes
-Based on timm's Swin-T implementation.
+Supports: Swin-T, Swin-S, Swin-B
 
-timm Swin-T internal structure (verified):
-    patch_embed: [B,3,224,224] -> [B,56,56,96]
-    Stage 0: downsample=Identity     -> 2 blocks -> [B,56,56,96]
-    Stage 1: downsample=PatchMerging -> 2 blocks -> [B,28,28,192]
-    Stage 2: downsample=PatchMerging -> 6 blocks -> [B,14,14,384]
-    Stage 3: downsample=PatchMerging -> 2 blocks -> [B,7,7,768]
-    norm -> head (head does global pool internally)
+timm Swin internal structure (verified):
+    Each stage.forward: x = downsample(x); x = blocks(x)
+    Downsample is Identity for stage 0, PatchMerging for stages 1-3.
+    head() does global pool internally — do NOT manually mean().
 """
 import torch
 import torch.nn as nn
@@ -16,24 +13,46 @@ import timm
 from .attnres import BlockAttnRes
 
 
+SWIN_CONFIGS = {
+    'swin_tiny': {
+        'name': 'swin_tiny_patch4_window7_224',
+        'dims': [96, 192, 384, 768],
+        'blocks': [2, 2, 6, 2],       # 12 layers total
+    },
+    'swin_small': {
+        'name': 'swin_small_patch4_window7_224',
+        'dims': [96, 192, 384, 768],
+        'blocks': [2, 2, 18, 2],      # 24 layers total
+    },
+    'swin_base': {
+        'name': 'swin_base_patch4_window7_224',
+        'dims': [128, 256, 512, 1024],
+        'blocks': [2, 2, 18, 2],      # 24 layers total
+    },
+}
+
+
 class SwinWithAttnRes(nn.Module):
-    """Swin-T with Intra-Stage Block AttnRes."""
+    """Swin Transformer with Intra-Stage Block AttnRes."""
 
-    # Swin-T architecture constants
-    STAGE_DIMS = [96, 192, 384, 768]
-    STAGE_BLOCKS = [2, 2, 6, 2]
-
-    def __init__(self, num_classes=100, pretrained=False):
+    def __init__(self, arch='swin_tiny', num_classes=100, pretrained=False,
+                 drop_path_rate=0.0):
         super().__init__()
+        assert arch in SWIN_CONFIGS, f"Unknown arch: {arch}. Choose from {list(SWIN_CONFIGS.keys())}"
+        cfg = SWIN_CONFIGS[arch]
+
         self.swin = timm.create_model(
-            'swin_tiny_patch4_window7_224',
+            cfg['name'],
             pretrained=pretrained,
             num_classes=num_classes,
+            drop_path_rate=drop_path_rate,
         )
+        self.stage_dims = cfg['dims']
+        self.stage_blocks = cfg['blocks']
 
         # Create AttnRes modules: one per block + one final per stage
         self.attn_res = nn.ModuleDict()
-        for si, (num_blocks, dim) in enumerate(zip(self.STAGE_BLOCKS, self.STAGE_DIMS)):
+        for si, (num_blocks, dim) in enumerate(zip(self.stage_blocks, self.stage_dims)):
             for bi in range(num_blocks):
                 self.attn_res[f"s{si}_b{bi}"] = BlockAttnRes(dim)
             self.attn_res[f"s{si}_final"] = BlockAttnRes(dim)
@@ -50,15 +69,15 @@ class SwinWithAttnRes(nn.Module):
             x = stage.downsample(x)
 
             # Intra-stage AttnRes over blocks
-            blocks = [x.clone()]      # b0 = stage input after downsample
+            blocks = [x.clone()]       # b0 = stage input after downsample
             partial_block = None
 
             for bi, swin_block in enumerate(stage.blocks):
                 pb = partial_block if partial_block is not None else torch.zeros_like(x)
                 h = self.attn_res[f"s{si}_b{bi}"](blocks, pb)
 
-                out = swin_block(h)   # SwinBlock has internal residual
-                delta = out - h       # extract layer's contribution
+                out = swin_block(h)    # SwinBlock has internal residual
+                delta = out - h        # extract layer's contribution
 
                 partial_block = delta if partial_block is None else partial_block + delta
 
