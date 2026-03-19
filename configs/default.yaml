@@ -1,0 +1,42 @@
+# CS-AttnRes default configuration
+# Override via command-line args: --epochs 300 --lr 1e-3
+
+# Model
+model: baseline  # baseline | attnres | cs_attnres
+num_classes: 100
+drop_path_rate: 0.2
+
+# AttnRes specific
+attnres:
+  block_size: null  # null = whole stage as one block
+  spatial_aware: false
+  spatial_bottleneck_r: 16
+  cross_scale: false
+
+# Data
+data: ~/autodl-tmp/imagenet100
+input_size: 224
+num_workers: 8
+
+# Training
+epochs: 100
+batch_size: 128
+optimizer: adamw
+lr: 1.0e-3
+min_lr: 1.0e-5
+weight_decay: 0.05
+warmup_epochs: 5
+grad_clip: 5.0
+label_smoothing: 0.1
+
+# Augmentation
+auto_augment: imagenet
+random_erasing: 0.25
+mixup: 0.0       # set to 0.8 for ImageNet-1K
+cutmix: 0.0      # set to 1.0 for ImageNet-1K
+
+# Logging
+wandb: true
+wandb_project: cs-attnres
+wandb_entity: null  # set to your wandb team name
+seed: 42
