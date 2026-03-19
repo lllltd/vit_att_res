@@ -20,25 +20,23 @@ class RMSNorm(nn.Module):
 class BlockAttnRes(nn.Module):
     """
     Single depth-attention operation: softmax attention over blocks + partial.
-    
-    Args:
-        dim: hidden dimension (must match last dim of input tensors)
+    Pseudo-query is zero-initialized (paper requirement).
     """
     def __init__(self, dim):
         super().__init__()
-        self.query = nn.Parameter(torch.zeros(dim))   # zero-init (paper requirement)
+        self.query = nn.Parameter(torch.zeros(dim))
         self.norm = RMSNorm(dim)
 
     def forward(self, blocks, partial_block):
         """
         Args:
-            blocks: list of tensors [..., D] — completed block representations
-            partial_block: tensor [..., D] — current block's partial accumulation
+            blocks: list of tensors [..., D]
+            partial_block: tensor [..., D]
         Returns:
             tensor [..., D] — weighted aggregation
         """
-        V = torch.stack(blocks + [partial_block], dim=0)    # [N+1, ...]
-        K = self.norm(V)                                      # [N+1, ...]
-        logits = (self.query * K).sum(dim=-1)                 # [N+1, ...(no D)]
-        weights = logits.softmax(dim=0).unsqueeze(-1)         # [N+1, ..., 1]
-        return (weights * V).sum(dim=0)                       # [..., D]
+        V = torch.stack(blocks + [partial_block], dim=0)
+        K = self.norm(V)
+        logits = (self.query * K).sum(dim=-1)
+        weights = logits.softmax(dim=0).unsqueeze(-1)
+        return (weights * V).sum(dim=0)
