@@ -40,7 +40,7 @@ except ImportError:
     HAS_WANDB = False
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from models.swin_attnres import SwinWithAttnRes, SWIN_CONFIGS
+from models.swin_attnres import SwinWithAttnRes, SWIN_CONFIGS, _build_swin_backbone
 
 
 # ──────────────────── Args ────────────────────
@@ -122,9 +122,8 @@ def build_loader(args):
 # ──────────────────── Model ────────────────────
 def build_model(args):
     if args.model == 'baseline':
-        cfg = SWIN_CONFIGS[args.arch]
-        model = timm.create_model(
-            cfg['name'], pretrained=False, num_classes=args.num_classes,
+        model = _build_swin_backbone(
+            args.arch, num_classes=args.num_classes,
             drop_path_rate=args.drop_path)
     elif args.model == 'attnres':
         model = SwinWithAttnRes(
